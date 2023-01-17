@@ -11,6 +11,20 @@
 This code uses all cores to convert audio files to hdf files (.h5) 
 
 ```python
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jan 17 13:49:47 2023
+
+@author: Administrator
+"""
+
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Jan 11 12:11:58 2023
+
+@author: Administrator
+"""
+
 
 import h5py
 import pandas as pd
@@ -111,9 +125,11 @@ def parafunc(afiles,window=3,overlap= 0.2,fftsize=16000,fmin=10, fmax=120,filein
 
 if __name__ == '__main__':
     
+    os.chdir(r'F:\cod_sound_analysis\2018\WA_hydrophones\tutorial')
 
-    audio_folder=r'YOUR_FOLDER_WITH_AUDIO_FILES\*.wav'
+    audio_folder=r'F:\cod_sound_analysis\2018\WA_hydrophones\tutorial\*.wav'
     audiopath_list=glob.glob(audio_folder)
+    
     print(audiopath_list)
         
     cpucounts=multiprocessing.cpu_count()
@@ -123,7 +139,9 @@ if __name__ == '__main__':
     pool = multiprocessing.Pool(processes=cpucounts)
     index_list=range(len( audiopath_list ))
     pool.map( partial( parafunc,audiopath_list,1,0.2,15000,10,200), index_list)
-    pool.close  
+    pool.close   
+    
+
 ```
 
 
@@ -151,6 +169,7 @@ here are some example of frames annotated as cod grunts:
 ![cod111](cod111.png)
 
 ```python
+
 
 import h5py
 import pandas as pd
@@ -199,15 +218,15 @@ for ix in range(len(t1)):
 np.sum(score_train)       
 
 
-plt.figure(2)
-plt.clf()
-k=1
-for ixs in np.where(score_train==True)[0]:
-    plt.subplot(10,10,k)
-    k=k+1
-    plt.imshow( x_train_sg[ixs,:,:,0] )
+# plt.figure(2)
+# plt.clf()
+# k=1
+# for ixs in np.where(score_train==True)[0]:
+#     plt.subplot(10,10,k)
+#     k=k+1
+#     plt.imshow( x_train_sg[ixs,:,:,0] )
 
-plt.tight_layout()
+# plt.tight_layout()
 
 
 #%% file 2
@@ -234,15 +253,15 @@ for ix in range(len(t1)):
 np.sum(score_train_2)       
 
 
-plt.figure(2)
-plt.clf()
-k=1
-for ixs in np.where(score_train_2==True)[0]:
-    plt.subplot(10,10,k)
-    k=k+1
-    plt.imshow( x_train_sg[ixs,:,:,0] )
+# plt.figure(3)
+# plt.clf()
+# k=1
+# for ixs in np.where(score_train_2==True)[0]:
+#     plt.subplot(10,10,k)
+#     k=k+1
+#     plt.imshow( x_train_sg[ixs,:,:,0] )
 
-plt.tight_layout()
+# plt.tight_layout()
 
 #%%
 
@@ -313,7 +332,70 @@ model.save('cod_grunt_tensorflow')
 
 
 
+## Running the tensorflow CNN over the .h5 files:
 
+```python
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jan 17 14:11:15 2023
+
+@author: Administrator
+"""
+
+import h5py
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import datetime as dt
+import glob 
+import os
+import sys
+import scipy.io.wavfile as wav
+import scipy.io
+from scipy import signal
+import tensorflow as tf
+
+import random
+from skimage.transform import  resize
+from functools import partial
+import multiprocessing  
+
+import tensorflow as tf
+#%%
+os.chdir(r'F:\cod_sound_analysis\2018\WA_hydrophones\tutorial')
+    
+
+model_cnn  = tf.keras.models.load_model('cod_grunt_tensorflow')
+
+
+# audio_folder=r'F:\cod_sound_analysis\2018\WA_hydrophones\tutorial'
+audiopath_list=glob.glob('*.wav_sg.h5')
+
+index=0
+for index in range(len( audiopath_list )) :
+    name=audiopath_list[index]
+    
+    h5f = h5py.File(name,'r')
+    x_train_sg = h5f['x_train_sg'][:]
+    t1 = h5f['t1'][:]
+    t2 = h5f['t2'][:]
+    window = h5f['window'][()]
+    overlap = h5f['overlap'][()]
+    h5f.close()
+    
+    pred = model_cnn.predict( x_train_sg )    
+    # score_predict= pred[pred.argmax(axis=1)]
+
+    
+    dfd=pd.Series(pred[:,1])
+    slider = int(window/(window*overlap))
+    # score = dfd.rolling(slider,center=True).sum() /5
+    score = dfd.rolling(slider,center=True).mean() 
+    score.index= pd.to_timedelta(t1 + window*0.5 ,'s') 
+
+    score.to_csv(name[:-10]+'_cnn_detections.csv')
+
+```
 
 
 
@@ -322,6 +404,12 @@ model.save('cod_grunt_tensorflow')
 This calculates the ROC curve for all audio files (training and validation). Use the two validation files to get the optimal threshold (in this case its around 0.4 )
 
 ```python
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jan 17 14:10:08 2023
+
+@author: Administrator
+"""
 
 
 import h5py
@@ -355,12 +443,12 @@ for index in range(len( audiopath_list )) :
     overlap = h5f['overlap'][()]
     h5f.close()
     
-    score = pd.read_csv(name[:-10]+'_cnn_detections.csv'  )
+    score = pd.read_csv(name[:-10]+'_cnn_detections.csv',index_col=0  )
     score.index= pd.to_timedelta(score.index)
 
     reclength = score.index.total_seconds().max()-overlap
 
-    df=pd.read_csv(name[:-8]+'.csv')
+    df=pd.read_csv(name[:-14]+'.csv')
     t_ann=df['tmin'] + (df['tmax']-df['tmin'])*0.5
     
     
@@ -384,7 +472,7 @@ for index in range(len( audiopath_list )) :
     i=0
     for threshold in tr: 
         
-        ix_p,b= find_peaks(score,height=threshold)
+        ix_p,b= find_peaks(score['0'].values,height=threshold)
         # score_detector=np.zeros(len(t1))
         # score_detector[ix_p] = 1
         t_det = score.index[ix_p].total_seconds()
@@ -408,18 +496,102 @@ for index in range(len( audiopath_list )) :
     df_roc.to_csv(name[:-8]+'_roc.csv')
     
     plt.plot(fpr,tpr,label=name)
-    for i, txt in enumerate(threshold):
+    for i, txt in enumerate(tr):
         plt.annotate("{:.2f}".format(txt), ( fpr[i] , tpr[i]))
 
 
+plt.ylabel('True positive rate')
+plt.xlabel('False positive rate')
+plt.grid()
+       
+# plt.legend()
+
 plt.savefig('roc.png')
+
 ```
 
+![roc](roc.png)
 
+Based on this a detection threshold of 0.4 works best. To put this into us for other audio files follow this:
 
 ## Applying detector
 
-```python
+To now use the correct detection threshold with the CNN predictions, run this over the .h5 files :
 
+```python
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jan 17 14:46:12 2023
+
+@author: Administrator
+"""
+
+
+import h5py
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import datetime as dt
+import glob 
+import os
+
+import tensorflow as tf
+from scipy.signal import find_peaks
+
+
+#%%
+os.chdir(r'F:\cod_sound_analysis\2018\WA_hydrophones\tutorial')
+    
+
+model_cnn  = tf.keras.models.load_model('cod_grunt_tensorflow')
+
+
+# audio_folder=r'F:\cod_sound_analysis\2018\WA_hydrophones\tutorial'
+audiopath_list=glob.glob('*.wav_sg.h5')
+
+index=0
+for index in range(len( audiopath_list )) :
+    name=audiopath_list[index]
+    
+    h5f = h5py.File(name,'r')
+    x_train_sg = h5f['x_train_sg'][:]
+    t1 = h5f['t1'][:]
+    t2 = h5f['t2'][:]
+    window = h5f['window'][()]
+    overlap = h5f['overlap'][()]
+    h5f.close()
+    
+    pred = model_cnn.predict( x_train_sg )    
+    # score_predict= pred[pred.argmax(axis=1)]
+
+    
+    dfd=pd.Series(pred[:,1])
+    slider = int(window/(window*overlap))
+    # score = dfd.rolling(slider,center=True).sum() /5
+    score = dfd.rolling(slider,center=True).mean() 
+    score.index= pd.to_timedelta(t1 + window*0.5 ,'s') 
+    
+    
+    detections=pd.DataFrame()
+    detections.index= score.index
+   
+    detections['cod']=0
+  
+    threshold = 0.4   
+    ix_peaks , b =  find_peaks(score.values,height=threshold)
+    detections.iloc[ix_peaks,0]=1
+   
+    a = detections['cod'].resample('1min').mean()
+    a.index=pd.Timestamp(2000,1,1) + a.index
+    
+    plt.figure(0)
+    plt.clf()
+    plt.plot( a)
+    plt.grid()
+    plt.ylabel( 'Detections per minute' )
+    plt.savefig(name[:-10]+'_detections.png')
+
+    detections.to_csv(name[:-10]+'_detections.csv')
 ```
 
+![20180305_180000_ch1_detections](20180305_180000_ch1_detections.png)
