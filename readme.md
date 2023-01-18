@@ -150,7 +150,7 @@ For the cod sound detection, use these parameters for parafunc:
 
 window= 1 second
 
-overlap= 0.
+overlap= 0.2
 
 fft size=15000
 
